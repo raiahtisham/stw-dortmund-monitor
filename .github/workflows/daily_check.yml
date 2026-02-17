@@ -1,12 +1,14 @@
 name: Dortmund Housing Monitor
+
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Runs every 5 minutes
-  workflow_dispatch:      # Allows you to run it manually for testing
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   check-rooms:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,3 +26,12 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         run: python monitor.py
+
+      # 🔴 THIS IS THE MISSING PIECE
+      - name: Commit room availability state
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add room_state.txt
+          git commit -m "Update room availability state" || echo "No state change"
+          git push
