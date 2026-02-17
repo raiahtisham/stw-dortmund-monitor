@@ -5,70 +5,70 @@ import os
 from email.message import EmailMessage
 from datetime import datetime
 
-# 1. Configuration
 URL = "https://www.stwdo.de/wohnen/aktuelle-wohnangebote"
+STATE_FILE = "room_state.txt"
 
-# 2. Get Secrets from GitHub Environment
 EMAIL_USER = os.environ.get('EMAIL_USER')
 EMAIL_PASS = os.environ.get('EMAIL_PASS')
 
-def check_for_rooms():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
-    try:
-        response = requests.get(URL, headers=headers, timeout=15)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 1. VISUAL CHECK: Look for the blue 'NO OFFERS' box specifically
-        # Your screenshot shows it uses class 'notification--info'
-        no_offers_box = soup.find('div', class_='notification--info')
-        
-        # 2. LOGIC: If the blue box is MISSING, a room is likely live!
-        if no_offers_box is None:
-            print(f"[{now}] ALERT: The 'NO OFFERS' blue box is GONE! Room detected.")
-            
-            # Try to grab the room details from the new view
-            room_cards = soup.find_all('div', class_='news-list-item')
-            if room_cards:
-                return "\n".join([card.get_text(strip=True) for card in room_cards])
-            return "The vacancy alert disappeared. Check the site immediately!"
-            
-        else:
-            # The blue box still exists, so we stay silent
-            print(f"[{now}] Status: Blue 'NO OFFERS' box is still visible. No email sent.")
-            return None
-            
-    except Exception as e:
-        print(f"[{now}] Error: {e}")
-        return None
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+}
 
-def send_alert(details):
-    if not EMAIL_USER or not EMAIL_PASS:
-        print("Error: Email credentials missing in GitHub Secrets.")
-        return
+def read_state():
+    if not os.path.exists(STATE_FILE):
+        return "no_room"
+    with open(STATE_FILE, "r") as f:
+        return f.read().strip()
 
+def write_state(state):
+    with open(STATE_FILE, "w") as f:
+        f.write(state)
+
+def room_is_available():
+    response = requests.get(URL, headers=headers, timeout=15)
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    # Blue "NO OFFERS" info box
+    no_offers_box = soup.find('div', class_='notification--info')
+
+    return no_offers_box is None
+
+def extract_room_details(soup):
+    cards = soup.find_all('div', class_='news-list-item')
+    if not cards:
+        return "Room detected! Check website immediately."
+    return "\n".join(card.get_text(strip=True) for card in cards)
+
+def send_email(details):
     msg = EmailMessage()
-    msg.set_content(f"URGENT: New Room Offers Detected at STW Dortmund!\n\nDetails found:\n{details}\n\nLink: {URL}")
-    msg['Subject'] = "STW Dortmund Room Alert!"
+    msg.set_content(
+        f"🎉 A room is AVAILABLE at Studentenwerk Dortmund!\n\n"
+        f"{details}\n\n"
+        f"Link: {URL}"
+    )
+    msg['Subject'] = "🚨 Studentenwerk Dortmund – Room Available!"
     msg['From'] = EMAIL_USER
-    msg['To'] = EMAIL_USER 
+    msg['To'] = EMAIL_USER
 
-    try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL_USER, EMAIL_PASS)
-            smtp.send_message(msg)
-        print("Success: Notification email sent.")
-    except Exception as e:
-        print(f"Error sending email: {e}")
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(EMAIL_USER, EMAIL_PASS)
+        smtp.send_message(msg)
 
 if __name__ == "__main__":
-    # Check for rooms and get the details
-    room_details = check_for_rooms()
-    
-    # ONLY send the email if room_details is NOT None
-    if room_details:
-        send_alert(room_details)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    previous_state = read_state()
+    available = room_is_available()
+
+    if available and previous_state == "no_room":
+        print(f"[{now}] ROOM APPEARED → sending email")
+        send_email("New room listing detected.")
+        write_state("room")
+
+    elif not available:
+        print(f"[{now}] No rooms available")
+        write_state("no_room")
+
+    else:
+        print(f"[{now}] Room already detected earlier → no email")
