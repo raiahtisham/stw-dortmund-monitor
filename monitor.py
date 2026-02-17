@@ -27,12 +27,21 @@ def write_state(state):
 
 def room_is_available():
     response = requests.get(URL, headers=headers, timeout=15)
-    soup = BeautifulSoup(response.text, 'html.parser')
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    # Blue "NO OFFERS" info box
-    no_offers_box = soup.find('div', class_='notification--info')
+    # The main container that always exists
+    form = soup.find("form", id="residential-offer-list-form")
+    if not form:
+        return False  # safety
 
-    return no_offers_box is None
+    # Explicit NO OFFERS box
+    no_offers = form.find("div", class_="notification--info")
+    if no_offers:
+        return False  # 🚫 definitely no rooms
+
+    # Look for real offer cards (only exist when rooms are listed)
+    offers = form.find_all("a", href=True)
+    return len(offers) > 0
 
 def extract_room_details(soup):
     cards = soup.find_all('div', class_='news-list-item')
@@ -72,3 +81,4 @@ if __name__ == "__main__":
 
     else:
         print(f"[{now}] Room already detected earlier → no email")
+
